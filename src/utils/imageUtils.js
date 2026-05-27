@@ -70,11 +70,50 @@ export function applyRenamePattern(pattern, index, originalName, startNum) {
 }
 
 // ─── HEIC → PNG ────────────────────────────────────────────────
+// Strategy: try native browser HEIC decode first (Safari / macOS Chrome 105+),
+// then fall back to heic2any's libheif WASM for other browsers.
+async function convertHeicNative(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    const timer = setTimeout(() => { URL.revokeObjectURL(url); reject(new Error('Timeout')); }, 20000);
+    img.onload = () => {
+      clearTimeout(timer);
+      URL.revokeObjectURL(url);
+      if (!img.naturalWidth) { reject(new Error('No dimensions')); return; }
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      canvas.getContext('2d').drawImage(img, 0, 0);
+      canvas.toBlob(blob => {
+        if (blob && blob.size > 0) resolve(blob);
+        else reject(new Error('Canvas export failed'));
+      }, 'image/png');
+    };
+    img.onerror = () => { clearTimeout(timer); URL.revokeObjectURL(url); reject(new Error('Native decode failed')); };
+    img.src = url;
+  });
+}
+
 export async function convertHeic(file) {
-  const heic2any = (await import('heic2any')).default;
-  const result = await heic2any({ blob: file, toType: 'image/png', quality: 1 });
-  const blob = Array.isArray(result) ? result[0] : result;
-  return { blob, mime: 'image/png' };
+  // Try native first — covers Safari and macOS Chrome 105+
+  try {
+    const blob = await convertHeicNative(file);
+    return { blob, mime: 'image/png' };
+  } catch {
+    // Fall back to heic2any (bundled libheif WASM)
+  }
+
+  try {
+    const heic2any = (await import('heic2any')).default;
+    const result = await heic2any({ blob: file, toType: 'image/png', quality: 1 });
+    const blob = Array.isArray(result) ? result[0] : result;
+    return { blob, mime: 'image/png' };
+  } catch (err) {
+    throw new Error(
+      'HEIC format not supported by this browser. Try opening in Safari, or convert the file on your iPhone first (Settings → Camera → Formats → Most Compatible).'
+    );
+  }
 }
 
 // ─── Compress ──────────────────────────────────────────────────
