@@ -66,7 +66,10 @@ export function formatBytes(bytes) {
 export function applyRenamePattern(pattern, index, originalName, startNum) {
   const base = originalName.replace(/\.[^/.]+$/, '');
   const n = String(index + startNum).padStart(3, '0');
-  return pattern.replace('{n}', n).replace('{original}', base);
+  let result = pattern.replace('{n}', n).replace('{original}', base);
+  // If pattern has no {n}, auto-append number so files always get unique names
+  if (!pattern.includes('{n}')) result += n;
+  return result;
 }
 
 // ─── HEIC → PNG ────────────────────────────────────────────────

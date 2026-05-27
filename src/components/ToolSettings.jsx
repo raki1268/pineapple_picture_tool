@@ -95,10 +95,12 @@ export default function ToolSettings({ tool, settings, onChange, files }) {
       <div className="settings-card">
         <p className="settings-title">HEIC → PNG</p>
         <p style={{ fontSize: 13, color: 'var(--gray-600)', margin: '0 0 10px' }}>
-          Converts Apple HEIC / HEIF images to PNG format. Drop your .heic files and click Process.
+          Converts Apple HEIC / HEIF images to PNG. Works in Safari instantly. In Chrome, the first
+          conversion downloads a ~31 MB decoder — subsequent files are fast.
         </p>
         <div style={{ fontSize: 12, color: 'var(--gray-400)', background: 'var(--yellow-light)', border: '1px solid var(--yellow-dark)', borderRadius: 8, padding: '8px 12px', lineHeight: 1.6 }}>
-          <strong style={{ color: 'var(--gray-600)' }}>首次使用提示：</strong> 第一次处理 HEIC 文件时，需要从网络下载约 <strong>31 MB</strong> 的解码器（仅首次，之后缓存），预计需要 10–30 秒，请耐心等待。
+          <strong style={{ color: 'var(--gray-600)' }}>First-time Chrome users:</strong> clicking Process
+          may take 10–30 s while the HEVC decoder loads. Subsequent runs are instant.
         </div>
       </div>
     );
@@ -269,14 +271,14 @@ export default function ToolSettings({ tool, settings, onChange, files }) {
   }
 
   if (tool === 'rename') {
-    const previewName = (n) => {
-      try {
-        const base = `example_photo.jpg`;
-        const out = s.renamePattern
-          .replace('{n}', String(n + s.renameStart - 1).padStart(3, '0'))
-          .replace('{original}', 'example_photo');
-        return `${out}.jpg`;
-      } catch { return ''; }
+    const hasN = s.renamePattern.includes('{n}');
+    const previewName = (idx) => {
+      const n = String(idx + s.renameStart).padStart(3, '0');
+      let out = s.renamePattern
+        .replace('{n}', n)
+        .replace('{original}', 'example_photo');
+      if (!hasN) out += n; // mirror the auto-append logic in applyRenamePattern
+      return `${out}.jpg`;
     };
 
     return (
@@ -291,7 +293,8 @@ export default function ToolSettings({ tool, settings, onChange, files }) {
             placeholder="{original}_{n}"
           />
           <p style={{ fontSize: 11, color: 'var(--gray-400)', margin: '4px 0 0' }}>
-            Use <code>{'{n}'}</code> for number, <code>{'{original}'}</code> for original filename
+            Use <code>{'{n}'}</code> for auto-number, <code>{'{original}'}</code> for original filename.
+            {!hasN && ' (number auto-appended since {n} is absent)'}
           </p>
         </div>
         <div className="field">
@@ -306,7 +309,7 @@ export default function ToolSettings({ tool, settings, onChange, files }) {
         </div>
         <div className="rename-preview">
           <div style={{ color: 'var(--gray-400)', fontSize: 11, marginBottom: 4 }}>Preview:</div>
-          {[0,1,2].map(i => <div key={i}>{previewName(i + 1)}</div>)}
+          {[0, 1, 2].map(i => <div key={i}>{previewName(i)}</div>)}
         </div>
       </div>
     );
