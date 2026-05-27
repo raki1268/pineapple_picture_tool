@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "pineapple-dev",
+      "runtimeExecutable": "/Users/luohui/Desktop/pineapple_picture_tool/node_modules/.bin/vite",
+      "runtimeArgs": ["--port", "5173"],
+      "port": 5173
+    }
+  ]
+}
