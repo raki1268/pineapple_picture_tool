@@ -1,13 +1,24 @@
 import piexif from 'piexifjs';
 
-function loadImage(file) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Failed to load image')); };
-    img.src = url;
-  });
+async function loadImage(file) {
+  // createImageBitmap with imageOrientation:'from-image' bakes EXIF rotation into
+  // the pixel data so canvas output always has the correct orientation regardless
+  // of browser. Falls back to an <img> element if the API is unavailable.
+  try {
+    const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    // Alias naturalWidth/Height so all callers work without changes
+    bmp.naturalWidth = bmp.width;
+    bmp.naturalHeight = bmp.height;
+    return bmp;
+  } catch {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Failed to load image')); };
+      img.src = url;
+    });
+  }
 }
 
 function canvasToBlob(canvas, mimeType, quality) {
