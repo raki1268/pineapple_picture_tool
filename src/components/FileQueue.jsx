@@ -3,10 +3,7 @@ import { formatBytes } from '../utils/imageUtils';
 function fileIcon(name = '') {
   const ext = name.split('.').pop().toLowerCase();
   if (['heic', 'heif'].includes(ext)) return '📷';
-  if (['jpg', 'jpeg'].includes(ext)) return '🖼️';
-  if (ext === 'png') return '🖼️';
-  if (ext === 'webp') return '🖼️';
-  return '📄';
+  return '🖼️';
 }
 
 function StatusBadge({ status }) {
@@ -36,21 +33,34 @@ function SizeCompare({ originalSize, processedSize }) {
   );
 }
 
-export default function FileQueue({ files, results, onRemove, onDownload, onDownloadAll, doneCount, isProcessing }) {
+export default function FileQueue({
+  files, results, onRemove, onDownload, onDownloadAll, onContinue,
+  doneCount, isProcessing,
+}) {
   const hasResults = results.length > 0;
+  const allDone = doneCount > 0 && doneCount === results.length && !isProcessing;
 
   return (
     <div className="file-queue">
       {(hasResults || files.length > 0) && (
         <div className="queue-header">
           <span className="queue-title">
-            {hasResults ? `Results · ${doneCount}/${results.length}` : `Queue · ${files.length} file${files.length !== 1 ? 's' : ''}`}
+            {hasResults
+              ? `Results · ${doneCount}/${results.length}`
+              : `Queue · ${files.length} file${files.length !== 1 ? 's' : ''}`}
           </span>
-          {doneCount > 1 && (
-            <button className="download-all-btn" onClick={onDownloadAll}>
-              ⬇ Download All ZIP
-            </button>
-          )}
+          <div className="queue-header-actions">
+            {doneCount > 1 && (
+              <button className="download-all-btn" onClick={onDownloadAll}>
+                ⬇ Download All
+              </button>
+            )}
+            {allDone && (
+              <button className="btn-continue-pipeline" onClick={onContinue} title="Move results to tray and keep editing">
+                Continue →
+              </button>
+            )}
+          </div>
         </div>
       )}
 

@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import Header from './components/Header';
 import ToolNav from './components/ToolNav';
+import StagingTray from './components/StagingTray';
 import Dropzone from './components/Dropzone';
 import ToolSettings from './components/ToolSettings';
 import FileQueue from './components/FileQueue';
@@ -34,10 +35,11 @@ let _id = 0;
 function genId() { return ++_id; }
 
 export default function App() {
-  const [activeTool, setActiveTool] = useState('heic');
-  const [files, setFiles] = useState([]);
-  const [results, setResults] = useState([]);
+  const [activeTool, setActiveTool]   = useState('heic');
+  const [files, setFiles]             = useState([]);
+  const [results, setResults]         = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [tray, setTray]               = useState([]); // persisted across tool switches
   const [settings, setSettings] = useState({
     compressFormat: 'image/jpeg',
     compressQuality: 80,
@@ -65,17 +67,12 @@ export default function App() {
 
   const currentTool = TOOLS.find(t => t.id === activeTool);
 
+  // ── File management ───────────────────────────────────────────
   const addFiles = useCallback((newFiles) => {
     const items = Array.from(newFiles).map(f => ({
-      id: genId(),
-      file: f,
-      name: f.name,
-      size: f.size,
+      id: genId(), file: f, name: f.name, size: f.size,
     }));
-    setFiles(prev => {
-      const combined = [...prev, ...items];
-      return combined.slice(0, 20);
-    });
+    setFiles(prev => [...prev, ...items].slice(0, 20));
     setResults([]);
   }, []);
 
@@ -84,15 +81,42 @@ export default function App() {
     setResults(prev => prev.filter(r => r.id !== id));
   }, []);
 
-  const clearAll = useCallback(() => {
-    setFiles([]);
-    setResults([]);
-  }, []);
+  const clearAll = useCallback(() => { setFiles([]); setResults([]); }, []);
 
   const patchSettings = useCallback((patch) => {
     setSettings(prev => ({ ...prev, ...patch }));
   }, []);
 
+  // ── Tray management ───────────────────────────────────────────
+  function moveResultsToTray() {
+    const done = results.filter(r => r.status === 'done');
+    if (!done.length) return;
+    setTray(prev => [
+      ...prev,
+      ...done.map(r => ({
+        id: `tray_${r.id}_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        name: r.outputName,
+        blob: r.blob,
+        mime: r.mime,
+        size: r.processedSize,
+      })),
+    ]);
+    clearAll();
+  }
+
+  function loadFromTray(items) {
+    const newFiles = items.map(item => {
+      const file = new File([item.blob], item.name, { type: item.mime || 'image/png' });
+      return { id: genId(), file, name: item.name, size: item.blob.size };
+    });
+    setFiles(prev => [...prev, ...newFiles].slice(0, 20));
+    setResults([]);
+  }
+
+  function removeTrayItem(id) { setTray(prev => prev.filter(t => t.id !== id)); }
+  function clearTray() { setTray([]); }
+
+  // ── Output naming ─────────────────────────────────────────────
   function getOutputFilename(fileItem, mime, index) {
     const ext = getOutputExtension(mime);
     if (settings.renameEnabled && activeTool !== 'rename') {
@@ -101,13 +125,14 @@ export default function App() {
     }
     if (activeTool === 'rename') {
       const renamed = applyRenamePattern(settings.renamePattern, index, fileItem.name, settings.renameStart);
-      const origExt = fileItem.name.split('.').pop();
+      const origExt = fileItem.name.split('.').pop() || 'jpg';
       return `${renamed}.${origExt}`;
     }
     const baseName = fileItem.name.replace(/\.[^/.]+$/, '');
     return `${baseName}.${ext}`;
   }
 
+  // ── Processing ────────────────────────────────────────────────
   async function processOneFile(fileItem) {
     const { file } = fileItem;
     switch (activeTool) {
@@ -149,24 +174,16 @@ export default function App() {
     setIsProcessing(true);
 
     setResults(files.map(f => ({
-      id: f.id,
-      originalName: f.name,
-      originalSize: f.size,
-      outputName: '',
-      blob: null,
-      processedSize: 0,
-      status: 'pending',
-      error: null,
+      id: f.id, originalName: f.name, originalSize: f.size,
+      outputName: '', blob: null, processedSize: 0, status: 'pending', error: null,
     })));
 
     const BATCH = 3;
     for (let i = 0; i < files.length; i += BATCH) {
       const batch = files.slice(i, i + BATCH);
-
       setResults(prev => prev.map(r =>
         batch.some(f => f.id === r.id) ? { ...r, status: 'processing' } : r
       ));
-
       await Promise.all(batch.map(async (fileItem, bi) => {
         const globalIdx = i + bi;
         try {
@@ -186,14 +203,12 @@ export default function App() {
         }
       }));
     }
-
     setIsProcessing(false);
   }
 
   function handleToolChange(toolId) {
     setActiveTool(toolId);
-    setFiles([]);
-    setResults([]);
+    // Keep files & results when switching — only clear crop rect
     patchSettings({ cropRect: null });
   }
 
@@ -203,6 +218,13 @@ export default function App() {
     <div className="app">
       <Header />
       <ToolNav tools={TOOLS} activeTool={activeTool} onChange={handleToolChange} />
+      <StagingTray
+        items={tray}
+        onLoadAll={() => loadFromTray(tray)}
+        onLoadItem={(item) => loadFromTray([item])}
+        onRemoveItem={removeTrayItem}
+        onClear={clearTray}
+      />
       <main className="main">
         <div className="tool-area">
           <Dropzone onFiles={addFiles} accept={currentTool?.accept} label={currentTool?.desc} />
@@ -230,6 +252,7 @@ export default function App() {
           onRemove={removeFile}
           onDownload={downloadSingle}
           onDownloadAll={() => downloadAllAsZip(results)}
+          onContinue={moveResultsToTray}
           doneCount={doneResults.length}
           isProcessing={isProcessing}
         />
