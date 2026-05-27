@@ -1,24 +1,86 @@
 import piexif from 'piexifjs';
 
-async function loadImage(file) {
-  // createImageBitmap with imageOrientation:'from-image' bakes EXIF rotation into
-  // the pixel data so canvas output always has the correct orientation regardless
-  // of browser. Falls back to an <img> element if the API is unavailable.
+// Parse the EXIF orientation tag directly from JPEG bytes (values 1–8).
+// Returns 1 (no rotation) for non-JPEG or any parse failure.
+async function readExifOrientation(file) {
+  if (!file.type.includes('jpeg') && !/\.jpe?g$/i.test(file.name || '')) return 1;
   try {
-    const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
-    // Alias naturalWidth/Height so all callers work without changes
-    bmp.naturalWidth = bmp.width;
-    bmp.naturalHeight = bmp.height;
-    return bmp;
-  } catch {
-    return new Promise((resolve, reject) => {
-      const url = URL.createObjectURL(file);
-      const img = new Image();
-      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
-      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Failed to load image')); };
-      img.src = url;
-    });
+    const buf  = await file.slice(0, 65536).arrayBuffer();
+    const view = new DataView(buf);
+    if (view.getUint16(0) !== 0xFFD8) return 1;
+    let off = 2;
+    while (off + 4 <= view.byteLength) {
+      const marker = view.getUint16(off);
+      const segLen = view.getUint16(off + 2);
+      if (marker === 0xFFE1 && view.byteLength >= off + 10 &&
+          view.getUint32(off + 4) === 0x45786966 &&   // "Exif"
+          view.getUint16(off + 8) === 0x0000) {        // null pad
+        const tiff = off + 10;
+        const le   = view.getUint16(tiff) === 0x4949; // little-endian?
+        const ifd  = tiff + view.getUint32(tiff + 4, le);
+        if (ifd + 2 > view.byteLength) break;
+        const entries = view.getUint16(ifd, le);
+        for (let i = 0; i < entries; i++) {
+          const e = ifd + 2 + i * 12;
+          if (e + 12 > view.byteLength) break;
+          if (view.getUint16(e, le) === 0x0112) {      // Orientation tag
+            return view.getUint16(e + 8, le);
+          }
+        }
+      }
+      if (marker === 0xFFDA) break; // SOS — no more metadata
+      off += 2 + segLen;
+    }
+  } catch {}
+  return 1;
+}
+
+// Load an image and bake any EXIF orientation into the pixel data so that
+// every downstream canvas draw produces the correctly-oriented output.
+// Returns an HTMLImageElement (orientation 1) or an HTMLCanvasElement
+// (orientations 2–8) with .naturalWidth/.naturalHeight set on both.
+async function loadImage(file) {
+  const orientation = await readExifOrientation(file);
+
+  const img = await new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const i   = new Image();
+    // Suppress CSS auto-rotation so naturalWidth/Height are always raw stored dims.
+    i.style.imageOrientation = 'none';
+    i.onload  = () => { URL.revokeObjectURL(url); resolve(i); };
+    i.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Failed to load image')); };
+    i.src = url;
+  });
+
+  if (orientation <= 1 || orientation > 8) return img; // nothing to do
+
+  const sw   = img.naturalWidth;
+  const sh   = img.naturalHeight;
+  const swap = orientation >= 5; // 90° family — output dims are transposed
+  const outW = swap ? sh : sw;
+  const outH = swap ? sw : sh;
+
+  const canvas = document.createElement('canvas');
+  canvas.width  = outW;
+  canvas.height = outH;
+  const ctx = canvas.getContext('2d');
+
+  // Transform matrix for each EXIF orientation value
+  switch (orientation) {
+    case 2: ctx.transform(-1,  0,  0,  1,  sw,   0); break; // flip H
+    case 3: ctx.transform(-1,  0,  0, -1,  sw,  sh); break; // 180°
+    case 4: ctx.transform( 1,  0,  0, -1,   0,  sh); break; // flip V
+    case 5: ctx.transform( 0,  1,  1,  0,   0,   0); break; // transpose
+    case 6: ctx.transform( 0,  1, -1,  0,  sh,   0); break; // 90° CW
+    case 7: ctx.transform( 0, -1, -1,  0,  sh,  sw); break; // transverse
+    case 8: ctx.transform( 0, -1,  1,  0,   0,  sw); break; // 90° CCW
   }
+  ctx.drawImage(img, 0, 0);
+
+  // Make it look like an image element so all callers work unchanged
+  canvas.naturalWidth  = outW;
+  canvas.naturalHeight = outH;
+  return canvas;
 }
 
 function canvasToBlob(canvas, mimeType, quality) {
