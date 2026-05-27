@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const RATIO_MAP = {
   '1:1':  [1, 1],
@@ -7,59 +7,125 @@ const RATIO_MAP = {
   '16:9': [16, 9],
   '9:16': [9, 16],
 };
+const DISPLAY_W = 380;
+const HIT_R     = 10; // px radius for corner handle hit detection
 
 function centerCrop(imgW, imgH, rw, rh) {
-  const targetRatio = rw / rh;
-  const imgRatio = imgW / imgH;
+  const tr = rw / rh;
+  const ir = imgW / imgH;
   let cw, ch, cx, cy;
-  if (imgRatio > targetRatio) {
-    ch = imgH; cw = ch * targetRatio;
-    cx = (imgW - cw) / 2; cy = 0;
-  } else {
-    cw = imgW; ch = cw / targetRatio;
-    cx = 0; cy = (imgH - ch) / 2;
-  }
+  if (ir > tr) { ch = imgH; cw = ch * tr; cx = (imgW - cw) / 2; cy = 0; }
+  else          { cw = imgW; ch = cw / tr; cx = 0; cy = (imgH - ch) / 2; }
   return { x: cx, y: cy, w: cw, h: ch };
 }
 
-export default function CropPreview({ file, ratio, onCropChange }) {
-  const canvasRef = useRef(null);
-  const imgRef = useRef(null);
-  const dragRef = useRef(null);
-  const [cropRect, setCropRect] = useState(null);
-  const DISPLAY_W = 380;
+function drawScene(canvas, img, crop) {
+  if (!canvas || !img) return;
+  const ctx = canvas.getContext('2d');
+  const dw = canvas.width, dh = canvas.height;
+  ctx.clearRect(0, 0, dw, dh);
+  ctx.drawImage(img, 0, 0, dw, dh);
+  if (!crop) return;
 
-  const draw = useCallback((img, crop, dw, dh) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    canvas.width = dw;
-    canvas.height = dh;
-    ctx.drawImage(img, 0, 0, dw, dh);
-    if (!crop) return;
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.fillRect(0, 0, dw, dh);
-    ctx.clearRect(crop.x, crop.y, crop.w, crop.h);
-    ctx.strokeStyle = '#F5C518';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(crop.x, crop.y, crop.w, crop.h);
-    // Rule-of-thirds guides
-    ctx.strokeStyle = 'rgba(245,197,24,0.4)';
-    ctx.lineWidth = 1;
-    const t3x = crop.w / 3;
-    const t3y = crop.h / 3;
-    for (let i = 1; i < 3; i++) {
-      ctx.beginPath(); ctx.moveTo(crop.x + t3x * i, crop.y); ctx.lineTo(crop.x + t3x * i, crop.y + crop.h); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(crop.x, crop.y + t3y * i); ctx.lineTo(crop.x + crop.w, crop.y + t3y * i); ctx.stroke();
+  // Dark vignette OUTSIDE crop (image shows through inside crop)
+  ctx.fillStyle = 'rgba(0,0,0,0.48)';
+  ctx.fillRect(0, 0,           dw, crop.y);                         // top
+  ctx.fillRect(0, crop.y+crop.h, dw, dh - crop.y - crop.h);        // bottom
+  ctx.fillRect(0, crop.y,      crop.x, crop.h);                     // left
+  ctx.fillRect(crop.x+crop.w, crop.y, dw-crop.x-crop.w, crop.h);   // right
+
+  // Border
+  ctx.strokeStyle = '#F5C518';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(crop.x, crop.y, crop.w, crop.h);
+
+  // Rule-of-thirds
+  ctx.strokeStyle = 'rgba(245,197,24,0.35)';
+  ctx.lineWidth = 1;
+  for (let i = 1; i < 3; i++) {
+    const lx = crop.x + crop.w / 3 * i;
+    const ly = crop.y + crop.h / 3 * i;
+    ctx.beginPath(); ctx.moveTo(lx, crop.y); ctx.lineTo(lx, crop.y + crop.h); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(crop.x, ly); ctx.lineTo(crop.x + crop.w, ly); ctx.stroke();
+  }
+
+  // Corner handles (filled circles)
+  ctx.fillStyle = '#F5C518';
+  [[crop.x, crop.y], [crop.x+crop.w, crop.y],
+   [crop.x, crop.y+crop.h], [crop.x+crop.w, crop.y+crop.h]].forEach(([hx, hy]) => {
+    ctx.beginPath(); ctx.arc(hx, hy, 5, 0, Math.PI * 2); ctx.fill();
+  });
+}
+
+function hitTest(pos, crop, isFree) {
+  if (!crop) return 'outside';
+  const corners = [
+    ['resize-tl', crop.x,        crop.y       ],
+    ['resize-tr', crop.x+crop.w, crop.y       ],
+    ['resize-bl', crop.x,        crop.y+crop.h],
+    ['resize-br', crop.x+crop.w, crop.y+crop.h],
+  ];
+  if (isFree) {
+    for (const [name, hx, hy] of corners) {
+      if (Math.abs(pos.x - hx) <= HIT_R && Math.abs(pos.y - hy) <= HIT_R) return name;
     }
-    // Corner handles
-    ctx.fillStyle = '#F5C518';
-    const hs = 6;
-    [[crop.x, crop.y], [crop.x + crop.w, crop.y], [crop.x, crop.y + crop.h], [crop.x + crop.w, crop.y + crop.h]].forEach(([hx, hy]) => {
-      ctx.fillRect(hx - hs / 2, hy - hs / 2, hs, hs);
-    });
-  }, []);
+  }
+  if (pos.x >= crop.x && pos.x <= crop.x+crop.w && pos.y >= crop.y && pos.y <= crop.y+crop.h) return 'move';
+  return 'outside';
+}
 
+function cursorFor(hit, isFree) {
+  if (hit === 'resize-tl' || hit === 'resize-br') return 'nwse-resize';
+  if (hit === 'resize-tr' || hit === 'resize-bl') return 'nesw-resize';
+  if (hit === 'move') return 'move';
+  if (hit === 'outside' && isFree) return 'crosshair';
+  return 'default';
+}
+
+export default function CropPreview({ file, ratio, onCropChange }) {
+  const canvasRef   = useRef(null);
+  const imgRef      = useRef(null);
+  const dragRef     = useRef(null);
+  const cropRef     = useRef(null);
+  const callbackRef = useRef(onCropChange);
+  useEffect(() => { callbackRef.current = onCropChange; });
+
+  const isFree = ratio === 'free';
+
+  // ── Helpers ──────────────────────────────────────────────────
+  function applyAndReport(newCrop) {
+    cropRef.current = newCrop;
+    drawScene(canvasRef.current, imgRef.current, newCrop);
+    callbackRef.current({ ...newCrop });
+  }
+
+  function initCrop(canvas, img, currentRatio) {
+    let disp;
+    if (currentRatio === 'free') {
+      disp = { x: 0, y: 0, w: canvas.width, h: canvas.height,
+               displayWidth: canvas.width, displayHeight: canvas.height };
+    } else {
+      const [rw, rh] = RATIO_MAP[currentRatio] || [1, 1];
+      const nat   = centerCrop(img.naturalWidth, img.naturalHeight, rw, rh);
+      const scale = DISPLAY_W / img.naturalWidth;
+      const dh    = Math.round(img.naturalHeight * scale);
+      disp = { x: nat.x * scale, y: nat.y * scale, w: nat.w * scale, h: nat.h * scale,
+               displayWidth: DISPLAY_W, displayHeight: dh };
+    }
+    applyAndReport(disp);
+  }
+
+  function getPos(e) {
+    const canvas = canvasRef.current;
+    const rect   = canvas.getBoundingClientRect();
+    const sx     = canvas.width / rect.width;
+    const sy     = canvas.height / rect.height;
+    const cx     = e.touches ? e.touches[0].clientX : e.clientX;
+    const cy     = e.touches ? e.touches[0].clientY : e.clientY;
+    return { x: (cx - rect.left) * sx, y: (cy - rect.top) * sy };
+  }
+
+  // ── Load image ───────────────────────────────────────────────
   useEffect(() => {
     if (!file) return;
     const url = URL.createObjectURL(file);
@@ -67,72 +133,89 @@ export default function CropPreview({ file, ratio, onCropChange }) {
     img.onload = () => {
       URL.revokeObjectURL(url);
       imgRef.current = img;
-      const scale = DISPLAY_W / img.naturalWidth;
-      const dh = Math.round(img.naturalHeight * scale);
-      const [rw, rh] = RATIO_MAP[ratio] || [1, 1];
-      const nat = centerCrop(img.naturalWidth, img.naturalHeight, rw, rh);
-      const disp = { x: nat.x * scale, y: nat.y * scale, w: nat.w * scale, h: nat.h * scale, displayWidth: DISPLAY_W, displayHeight: dh };
-      setCropRect(disp);
-      draw(img, disp, DISPLAY_W, dh);
-      onCropChange({ ...disp });
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      canvas.width  = DISPLAY_W;
+      canvas.height = Math.round(img.naturalHeight * DISPLAY_W / img.naturalWidth);
+      initCrop(canvas, img, ratio);
     };
     img.src = url;
   }, [file]);
 
+  // ── Re-crop on ratio change ──────────────────────────────────
   useEffect(() => {
-    const img = imgRef.current;
-    if (!img) return;
-    const scale = DISPLAY_W / img.naturalWidth;
-    const dh = Math.round(img.naturalHeight * scale);
-    const [rw, rh] = RATIO_MAP[ratio] || [1, 1];
-    const nat = centerCrop(img.naturalWidth, img.naturalHeight, rw, rh);
-    const disp = { x: nat.x * scale, y: nat.y * scale, w: nat.w * scale, h: nat.h * scale, displayWidth: DISPLAY_W, displayHeight: dh };
-    setCropRect(disp);
-    draw(img, disp, DISPLAY_W, dh);
-    onCropChange({ ...disp });
+    const img    = imgRef.current;
+    const canvas = canvasRef.current;
+    if (!img || !canvas) return;
+    initCrop(canvas, img, ratio);
   }, [ratio]);
 
-  function getCanvasPos(e) {
-    const rect = canvasRef.current.getBoundingClientRect();
-    const scaleX = canvasRef.current.width / rect.width;
-    const scaleY = canvasRef.current.height / rect.height;
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
-  }
-
-  function onMouseDown(e) {
+  // ── Pointer events ───────────────────────────────────────────
+  function onDown(e) {
     e.preventDefault();
-    const pos = getCanvasPos(e);
-    const crop = cropRect;
-    if (!crop) return;
-    const inside = pos.x >= crop.x && pos.x <= crop.x + crop.w && pos.y >= crop.y && pos.y <= crop.y + crop.h;
-    if (inside) {
-      dragRef.current = { startX: pos.x, startY: pos.y, origX: crop.x, origY: crop.y };
+    const pos  = getPos(e);
+    const crop = cropRef.current;
+    const hit  = hitTest(pos, crop, isFree);
+    canvasRef.current.style.cursor = cursorFor(hit, isFree);
+
+    if (hit === 'move') {
+      dragRef.current = { type: 'move', sx: pos.x, sy: pos.y, orig: { ...crop } };
+    } else if (hit.startsWith('resize')) {
+      dragRef.current = { type: hit,   sx: pos.x, sy: pos.y, orig: { ...crop } };
+    } else if (hit === 'outside' && isFree) {
+      dragRef.current = { type: 'new', sx: pos.x, sy: pos.y };
     }
   }
 
-  function onMouseMove(e) {
-    if (!dragRef.current || !cropRect || !imgRef.current) return;
+  function onMove(e) {
+    const pos = getPos(e);
+    if (!dragRef.current) {
+      // Update cursor on hover
+      canvasRef.current.style.cursor = cursorFor(hitTest(pos, cropRef.current, isFree), isFree);
+      return;
+    }
     e.preventDefault();
-    const pos = getCanvasPos(e);
-    const dx = pos.x - dragRef.current.startX;
-    const dy = pos.y - dragRef.current.startY;
     const canvas = canvasRef.current;
-    const img = imgRef.current;
-    const scale = DISPLAY_W / img.naturalWidth;
-    const dh = Math.round(img.naturalHeight * scale);
-    const newX = Math.max(0, Math.min(canvas.width - cropRect.w, dragRef.current.origX + dx));
-    const newY = Math.max(0, Math.min(dh - cropRect.h, dragRef.current.origY + dy));
-    const updated = { ...cropRect, x: newX, y: newY };
-    setCropRect(updated);
-    draw(imgRef.current, updated, DISPLAY_W, dh);
-    onCropChange({ ...updated });
+    const cw = canvas.width, ch = canvas.height;
+    const { type, sx, sy, orig } = dragRef.current;
+    const dx = pos.x - sx, dy = pos.y - sy;
+
+    if (type === 'move') {
+      const x = Math.max(0, Math.min(cw - orig.w, orig.x + dx));
+      const y = Math.max(0, Math.min(ch - orig.h, orig.y + dy));
+      applyAndReport({ ...orig, x, y });
+    } else if (type === 'new') {
+      const x = Math.max(0, Math.min(cw, Math.min(sx, pos.x)));
+      const y = Math.max(0, Math.min(ch, Math.min(sy, pos.y)));
+      const w = Math.min(Math.abs(pos.x - sx), cw - x);
+      const h = Math.min(Math.abs(pos.y - sy), ch - y);
+      if (w < 4 || h < 4) return;
+      applyAndReport({ x, y, w, h, displayWidth: cw, displayHeight: ch });
+    } else {
+      // Resize from a corner
+      let { x, y, w, h } = orig;
+      if (type === 'resize-br') {
+        w = Math.max(20, Math.min(cw - x, orig.w + dx));
+        h = Math.max(20, Math.min(ch - y, orig.h + dy));
+      } else if (type === 'resize-bl') {
+        const newX = Math.max(0, Math.min(orig.x + orig.w - 20, orig.x + dx));
+        w = orig.x + orig.w - newX; h = Math.max(20, Math.min(ch - y, orig.h + dy));
+        x = newX;
+      } else if (type === 'resize-tr') {
+        const newY = Math.max(0, Math.min(orig.y + orig.h - 20, orig.y + dy));
+        w = Math.max(20, Math.min(cw - x, orig.w + dx)); h = orig.y + orig.h - newY;
+        y = newY;
+      } else if (type === 'resize-tl') {
+        const newX = Math.max(0, Math.min(orig.x + orig.w - 20, orig.x + dx));
+        const newY = Math.max(0, Math.min(orig.y + orig.h - 20, orig.y + dy));
+        w = orig.x + orig.w - newX; h = orig.y + orig.h - newY;
+        x = newX; y = newY;
+      }
+      applyAndReport({ x, y, w, h, displayWidth: cw, displayHeight: ch });
+    }
   }
 
-  function onMouseUp() {
-    dragRef.current = null;
-  }
+  function onUp() { dragRef.current = null; }
 
   if (!file) return null;
 
@@ -141,15 +224,19 @@ export default function CropPreview({ file, ratio, onCropChange }) {
       <canvas
         ref={canvasRef}
         className="crop-canvas"
-        onMouseDown={onMouseDown}
-        onMouseMove={onMouseMove}
-        onMouseUp={onMouseUp}
-        onMouseLeave={onMouseUp}
-        onTouchStart={onMouseDown}
-        onTouchMove={onMouseMove}
-        onTouchEnd={onMouseUp}
+        onMouseDown={onDown}
+        onMouseMove={onMove}
+        onMouseUp={onUp}
+        onMouseLeave={onUp}
+        onTouchStart={onDown}
+        onTouchMove={onMove}
+        onTouchEnd={onUp}
       />
-      <p className="crop-hint">Drag to reposition the crop area</p>
+      <p className="crop-hint">
+        {isFree
+          ? 'Drag inside to move · drag corners to resize · drag empty area for new selection'
+          : 'Drag to reposition · click same ratio again to switch to Free mode'}
+      </p>
     </div>
   );
 }

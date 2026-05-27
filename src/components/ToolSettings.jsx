@@ -58,6 +58,45 @@ function Slider({ label, value, min, max, onChange }) {
   );
 }
 
+const ROTATE_CSS = {
+  cw90:  'rotate(90deg)',
+  ccw90: 'rotate(-90deg)',
+  '180': 'rotate(180deg)',
+  flipH: 'scaleX(-1)',
+  flipV: 'scaleY(-1)',
+};
+
+function RotateSettings({ s, set, files }) {
+  const previewFile = files.length === 1 ? files[0]?.file ?? null : null;
+  const previewUrl  = useObjectURL(previewFile);
+  const transform   = ROTATE_CSS[s.rotateAction] || '';
+
+  return (
+    <div className="settings-card">
+      <p className="settings-title">Rotate / Flip</p>
+      <div className="action-buttons">
+        {[
+          ['cw90',  '↻ 90° CW'],
+          ['ccw90', '↺ 90° CCW'],
+          ['180',   '↕ 180°'],
+          ['flipH', '⟺ Flip H'],
+          ['flipV', '↕ Flip V'],
+        ].map(([v, l]) => (
+          <ActionBtn key={v} selected={s.rotateAction === v} onClick={() => set({ rotateAction: v })}>{l}</ActionBtn>
+        ))}
+      </div>
+      {previewUrl && (
+        <div style={{ marginTop: 14 }}>
+          <div className="field-label" style={{ marginBottom: 6 }}><span>Preview</span></div>
+          <div className="rotate-preview-wrap">
+            <img src={previewUrl} alt="preview" className="rotate-preview-img" style={{ transform }} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BrightnessSettings({ s, set, files }) {
   const previewFile = files.length === 1 ? files[0]?.file ?? null : null;
   const previewUrl = useObjectURL(previewFile);
@@ -227,15 +266,27 @@ export default function ToolSettings({ tool, settings, onChange, files }) {
 
   if (tool === 'crop') {
     const singleFile = files.length === 1 ? files[0]?.file : null;
+    const isFree = s.cropRatio === 'free';
     return (
       <div className="settings-card">
         <p className="settings-title">Crop Settings</p>
         <div className="field">
           <div className="field-label"><span>Aspect ratio</span></div>
-          <div className="radio-group">
+          <div className="action-buttons" style={{ flexWrap: 'wrap' }}>
             {['1:1','4:3','3:4','16:9','9:16'].map(r => (
-              <Radio key={r} name="cropRatio" value={r} checked={s.cropRatio === r} onChange={v => set({ cropRatio: v, cropRect: null })}>{r}</Radio>
+              <ActionBtn
+                key={r}
+                selected={s.cropRatio === r}
+                onClick={() => {
+                  // Clicking an already-selected preset → switch to free mode
+                  if (s.cropRatio === r) set({ cropRatio: 'free', cropRect: null });
+                  else set({ cropRatio: r, cropRect: null });
+                }}
+              >{r}</ActionBtn>
             ))}
+            <ActionBtn selected={isFree} onClick={() => set({ cropRatio: 'free', cropRect: null })}>
+              Free
+            </ActionBtn>
           </div>
         </div>
         {singleFile && (
@@ -255,22 +306,7 @@ export default function ToolSettings({ tool, settings, onChange, files }) {
   }
 
   if (tool === 'rotate') {
-    return (
-      <div className="settings-card">
-        <p className="settings-title">Rotate / Flip</p>
-        <div className="action-buttons">
-          {[
-            ['cw90', '↻ 90° CW'],
-            ['ccw90', '↺ 90° CCW'],
-            ['180', '↕ 180°'],
-            ['flipH', '⟺ Flip H'],
-            ['flipV', '↕ Flip V'],
-          ].map(([v, l]) => (
-            <ActionBtn key={v} selected={s.rotateAction === v} onClick={() => set({ rotateAction: v })}>{l}</ActionBtn>
-          ))}
-        </div>
-      </div>
-    );
+    return <RotateSettings s={s} set={set} files={files} />;
   }
 
   if (tool === 'brightness') {

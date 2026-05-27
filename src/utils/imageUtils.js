@@ -378,9 +378,6 @@ export async function resizeImage(file, { mode, width, height, percent, lockAspe
 // ─── Crop ──────────────────────────────────────────────────────
 export async function cropImage(file, { ratio, cropRect }) {
   const img = await loadImage(file);
-  const [rw, rh] = ratio.split(':').map(Number);
-  const targetRatio = rw / rh;
-  const imgRatio = img.naturalWidth / img.naturalHeight;
 
   let cx, cy, cw, ch;
   if (cropRect) {
@@ -391,8 +388,12 @@ export async function cropImage(file, { ratio, cropRect }) {
     cy = Math.round(cropRect.y * scaleY);
     cw = Math.round(cropRect.w * scaleX);
     ch = Math.round(cropRect.h * scaleY);
+  } else if (ratio === 'free') {
+    cx = 0; cy = 0; cw = img.naturalWidth; ch = img.naturalHeight;
   } else {
-    // center crop
+    const [rw, rh] = ratio.split(':').map(Number);
+    const targetRatio = rw / rh;
+    const imgRatio = img.naturalWidth / img.naturalHeight;
     if (imgRatio > targetRatio) {
       ch = img.naturalHeight;
       cw = Math.round(ch * targetRatio);

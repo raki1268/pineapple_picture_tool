@@ -931,8 +931,8 @@ body.tray-dragging .dropzone .dropzone-icon::after {
 .crop-canvas {
   display: block;
   width: 100%;
-  cursor: crosshair;
   user-select: none;
+  touch-action: none;
 }
 .crop-hint {
   font-size: 11px;
@@ -940,6 +940,26 @@ body.tray-dragging .dropzone .dropzone-icon::after {
   text-align: center;
   padding: 6px;
   background: var(--gray-50);
+}
+
+/* ── Rotate preview ─────────────────────────────────────────── */
+.rotate-preview-wrap {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--gray-200);
+  background: var(--gray-100);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100px;
+  max-height: 240px;
+}
+.rotate-preview-img {
+  max-width: 100%;
+  max-height: 230px;
+  display: block;
+  object-fit: contain;
+  transition: transform 0.22s cubic-bezier(.4,0,.2,1);
 }
 
 /* ── Spinner ─────────────────────────────────────────────────── */
