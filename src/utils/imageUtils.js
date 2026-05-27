@@ -70,13 +70,51 @@ export function applyRenamePattern(pattern, index, originalName, startNum) {
 }
 
 // ─── HEIC → PNG ────────────────────────────────────────────────
-// Strategy: try native browser HEIC decode first (Safari / macOS Chrome 105+),
-// then fall back to heic2any's libheif WASM for other browsers.
+// Strategy:
+//  1. Native browser decode (Safari / macOS HEIC-capable browsers)
+//  2. FFmpeg.wasm ST mode — includes HEVC decoder, no SharedArrayBuffer needed
+//  3. heic2any libheif fallback
+//  FFmpeg core (~31 MB) is loaded from CDN on first use and reused after.
+
+let _ffmpegInstance = null;
+let _ffmpegLoadPromise = null;
+
+async function getFFmpeg() {
+  if (_ffmpegInstance) return _ffmpegInstance;
+  if (_ffmpegLoadPromise) return _ffmpegLoadPromise;
+
+  _ffmpegLoadPromise = (async () => {
+    const { FFmpeg } = await import('@ffmpeg/ffmpeg');
+    const { toBlobURL } = await import('@ffmpeg/util');
+    const ff = new FFmpeg();
+    // Single-thread core — no SharedArrayBuffer / COOP headers required
+    const BASE = 'https://unpkg.com/@ffmpeg/core-st@0.12.6/dist/esm';
+    await ff.load({
+      coreURL: await toBlobURL(`${BASE}/ffmpeg-core.js`, 'text/javascript'),
+      wasmURL: await toBlobURL(`${BASE}/ffmpeg-core.wasm`, 'application/wasm'),
+    });
+    _ffmpegInstance = ff;
+    _ffmpegLoadPromise = null;
+    return ff;
+  })();
+
+  return _ffmpegLoadPromise;
+}
+
+// FFmpeg is single-instance; serialize HEIC jobs to avoid FS conflicts
+let _ffmpegQueue = Promise.resolve();
+function withFFmpeg(fn) {
+  let release;
+  const prev = _ffmpegQueue;
+  _ffmpegQueue = new Promise(r => { release = r; });
+  return prev.then(() => getFFmpeg()).then(fn).finally(() => release());
+}
+
 async function convertHeicNative(file) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
-    const timer = setTimeout(() => { URL.revokeObjectURL(url); reject(new Error('Timeout')); }, 20000);
+    const timer = setTimeout(() => { URL.revokeObjectURL(url); reject(new Error('Timeout')); }, 8000);
     img.onload = () => {
       clearTimeout(timer);
       URL.revokeObjectURL(url);
@@ -86,33 +124,52 @@ async function convertHeicNative(file) {
       canvas.height = img.naturalHeight;
       canvas.getContext('2d').drawImage(img, 0, 0);
       canvas.toBlob(blob => {
-        if (blob && blob.size > 0) resolve(blob);
-        else reject(new Error('Canvas export failed'));
+        // A valid PNG from a real image is always several KB
+        if (blob && blob.size > 2000) resolve(blob);
+        else reject(new Error('Canvas export too small'));
       }, 'image/png');
     };
-    img.onerror = () => { clearTimeout(timer); URL.revokeObjectURL(url); reject(new Error('Native decode failed')); };
+    img.onerror = () => { clearTimeout(timer); URL.revokeObjectURL(url); reject(new Error('Native failed')); };
     img.src = url;
   });
 }
 
+async function convertHeicFFmpeg(file) {
+  return withFFmpeg(async (ff) => {
+    const { fetchFile } = await import('@ffmpeg/util');
+    const ts = Date.now();
+    const inp = `in_${ts}.heic`;
+    const out = `out_${ts}.png`;
+    await ff.writeFile(inp, await fetchFile(file));
+    await ff.exec(['-i', inp, out]);
+    const data = await ff.readFile(out);
+    await ff.deleteFile(inp).catch(() => {});
+    await ff.deleteFile(out).catch(() => {});
+    return new Blob([data.buffer], { type: 'image/png' });
+  });
+}
+
 export async function convertHeic(file) {
-  // Try native first — covers Safari and macOS Chrome 105+
+  // 1. Native (fastest — Safari, macOS Chrome with CoreMedia HEIC)
   try {
     const blob = await convertHeicNative(file);
     return { blob, mime: 'image/png' };
-  } catch {
-    // Fall back to heic2any (bundled libheif WASM)
-  }
+  } catch { /* try next */ }
 
+  // 2. FFmpeg.wasm — self-contained HEVC decoder, works in all modern browsers
+  try {
+    const blob = await convertHeicFFmpeg(file);
+    return { blob, mime: 'image/png' };
+  } catch { /* try next */ }
+
+  // 3. heic2any libheif — last resort for older HEIC variants
   try {
     const heic2any = (await import('heic2any')).default;
     const result = await heic2any({ blob: file, toType: 'image/png', quality: 1 });
     const blob = Array.isArray(result) ? result[0] : result;
     return { blob, mime: 'image/png' };
-  } catch (err) {
-    throw new Error(
-      'HEIC format not supported by this browser. Try opening in Safari, or convert the file on your iPhone first (Settings → Camera → Formats → Most Compatible).'
-    );
+  } catch {
+    throw new Error('HEIC conversion failed — the first file may take 10–20s while the decoder loads (~31 MB). Please try again.');
   }
 }
 

@@ -94,9 +94,12 @@ export default function ToolSettings({ tool, settings, onChange, files }) {
     return (
       <div className="settings-card">
         <p className="settings-title">HEIC → PNG</p>
-        <p style={{ fontSize: 13, color: 'var(--gray-600)', margin: 0 }}>
+        <p style={{ fontSize: 13, color: 'var(--gray-600)', margin: '0 0 10px' }}>
           Converts Apple HEIC / HEIF images to PNG format. Drop your .heic files and click Process.
         </p>
+        <div style={{ fontSize: 12, color: 'var(--gray-400)', background: 'var(--yellow-light)', border: '1px solid var(--yellow-dark)', borderRadius: 8, padding: '8px 12px', lineHeight: 1.6 }}>
+          <strong style={{ color: 'var(--gray-600)' }}>首次使用提示：</strong> 第一次处理 HEIC 文件时，需要从网络下载约 <strong>31 MB</strong> 的解码器（仅首次，之后缓存），预计需要 10–30 秒，请耐心等待。
+        </div>
       </div>
     );
   }
