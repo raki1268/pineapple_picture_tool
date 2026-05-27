@@ -223,6 +223,22 @@ body {
   color: var(--gray-900);
 }
 
+.field-disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.settings-note {
+  font-size: 12px;
+  color: var(--gray-600);
+  background: #f5f0e8;
+  border-left: 3px solid var(--yellow);
+  padding: 7px 10px;
+  border-radius: 4px;
+  margin: 0;
+  line-height: 1.5;
+}
+
 input[type="range"] {
   -webkit-appearance: none;
   width: 100%;
@@ -787,6 +803,123 @@ select:focus, input[type="text"]:focus, input[type="number"]:focus {
   flex-shrink: 0;
 }
 .tray-clear-btn:hover { background: rgba(255,255,255,.2); color: white; }
+
+/* ── Tray drag ───────────────────────────────────────────────── */
+.tray-label-draggable {
+  cursor: grab;
+  user-select: none;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background .12s;
+}
+.tray-label-draggable:hover {
+  background: rgba(245,197,24,.18);
+}
+.tray-label-draggable:active { cursor: grabbing; }
+
+.tray-item[draggable] { cursor: grab; }
+.tray-item[draggable]:active { cursor: grabbing; }
+
+/* Dropzone glows green when a tray drag is in progress */
+body.tray-dragging .dropzone {
+  border-color: var(--green);
+  background-color: rgba(58,107,74,.07);
+  box-shadow: 0 0 0 3px rgba(58,107,74,.15);
+}
+body.tray-dragging .dropzone.dragging {
+  border-color: var(--green);
+  background-color: rgba(58,107,74,.13);
+  box-shadow: 0 0 0 4px rgba(58,107,74,.25);
+}
+body.tray-dragging .dropzone .dropzone-icon::after {
+  content: ' ↓';
+}
+
+/* ── Pineapple Toast ─────────────────────────────────────────── */
+.pineapple-toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 16px;
+  padding: 11px 14px;
+  background: linear-gradient(135deg, #fffbea 0%, #fff8d6 100%);
+  border: 1.5px solid var(--yellow);
+  border-radius: 10px;
+  box-shadow: 0 3px 14px rgba(245,197,24,.22), 0 1px 4px rgba(0,0,0,.08);
+  animation: toast-slide-in .3s cubic-bezier(.34,1.56,.64,1) both;
+  position: relative;
+  overflow: hidden;
+}
+.pineapple-toast::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 8px,
+    rgba(245,197,24,.06) 8px,
+    rgba(245,197,24,.06) 16px
+  );
+  pointer-events: none;
+}
+
+@keyframes toast-slide-in {
+  from { opacity: 0; transform: translateY(-10px) scale(.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.toast-pine {
+  font-size: 26px;
+  line-height: 1;
+  flex-shrink: 0;
+  animation: pine-bounce 1.2s ease-in-out infinite;
+}
+@keyframes pine-bounce {
+  0%, 100% { transform: translateY(0); }
+  40%       { transform: translateY(-5px); }
+  60%       { transform: translateY(-3px); }
+}
+
+.toast-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.toast-body strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gray-900);
+}
+.toast-body span {
+  font-size: 12px;
+  color: var(--gray-600);
+  line-height: 1.4;
+}
+.toast-body em {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--green-dark);
+}
+
+.toast-close {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: rgba(0,0,0,.07);
+  color: var(--gray-600);
+  border-radius: 50%;
+  font-size: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .12s;
+  padding: 0;
+}
+.toast-close:hover { background: rgba(0,0,0,.14); }
 
 /* ── Crop Preview ────────────────────────────────────────────── */
 .crop-preview-wrap {

@@ -120,9 +120,16 @@ export default function ToolSettings({ tool, settings, onChange, files }) {
           </div>
         </div>
 
-        <div className="field">
-          <div className="field-label"><span>Quality</span><span className="field-value">{s.compressQuality}</span></div>
-          <input type="range" min="1" max="100" value={s.compressQuality} onChange={e => set({ compressQuality: +e.target.value })} />
+        <div className={`field${s.compressFormat === 'image/png' ? ' field-disabled' : ''}`}>
+          <div className="field-label">
+            <span>Quality</span>
+            {s.compressFormat !== 'image/png' && <span className="field-value">{s.compressQuality}</span>}
+          </div>
+          {s.compressFormat === 'image/png' ? (
+            <p className="settings-note">PNG is lossless — quality has no effect. Switch to JPG or WebP to reduce file size.</p>
+          ) : (
+            <input type="range" min="1" max="100" value={s.compressQuality} onChange={e => set({ compressQuality: +e.target.value })} />
+          )}
         </div>
 
         <Toggle checked={s.compressResize} onChange={v => set({ compressResize: v })} label="Also resize" />

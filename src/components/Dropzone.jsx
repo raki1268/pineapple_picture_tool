@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 
-export default function Dropzone({ onFiles, accept, label }) {
+export default function Dropzone({ onFiles, accept, label, onTrayDrop }) {
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef(null);
 
@@ -8,7 +8,11 @@ export default function Dropzone({ onFiles, accept, label }) {
     e.preventDefault();
     setDragging(false);
     const files = e.dataTransfer?.files;
-    if (files?.length) onFiles(files);
+    if (files?.length) {
+      onFiles(files);
+    } else {
+      onTrayDrop?.();
+    }
   }
 
   function handleDragOver(e) {

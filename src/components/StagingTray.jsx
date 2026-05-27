@@ -16,12 +16,30 @@ function TrayThumb({ blob, mime, name }) {
   return <span className="tray-thumb-icon">🖼</span>;
 }
 
-export default function StagingTray({ items, onLoadAll, onLoadItem, onRemoveItem, onClear }) {
+export default function StagingTray({ items, onLoadAll, onLoadItem, onRemoveItem, onClear, onDragStart, onDragEnd }) {
   if (!items.length) return null;
+
+  function startDragAll(e) {
+    e.dataTransfer.effectAllowed = 'copy';
+    e.dataTransfer.setData('text/plain', 'tray-all');
+    onDragStart?.(items);
+  }
+
+  function startDragOne(e, item) {
+    e.dataTransfer.effectAllowed = 'copy';
+    e.dataTransfer.setData('text/plain', 'tray-item');
+    onDragStart?.([item]);
+  }
 
   return (
     <div className="staging-tray">
-      <div className="tray-label">
+      <div
+        className="tray-label tray-label-draggable"
+        draggable
+        onDragStart={startDragAll}
+        onDragEnd={() => onDragEnd?.()}
+        title="Drag to drop zone to load all"
+      >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
           <path d="M3 6h18M3 12h18M3 18h18"/>
         </svg>
@@ -34,8 +52,11 @@ export default function StagingTray({ items, onLoadAll, onLoadItem, onRemoveItem
             <div
               key={item.id}
               className="tray-item"
-              title={`Load: ${item.name}`}
+              draggable
+              title={`Drag or click to load: ${item.name}`}
               onClick={() => onLoadItem(item)}
+              onDragStart={(e) => startDragOne(e, item)}
+              onDragEnd={() => onDragEnd?.()}
             >
               <div className="tray-thumb-wrap">
                 <TrayThumb blob={item.blob} mime={item.mime} name={item.name} />

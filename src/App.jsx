@@ -1,7 +1,8 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import Header from './components/Header';
 import ToolNav from './components/ToolNav';
 import StagingTray from './components/StagingTray';
+import PineappleToast from './components/PineappleToast';
 import Dropzone from './components/Dropzone';
 import ToolSettings from './components/ToolSettings';
 import FileQueue from './components/FileQueue';
@@ -67,6 +68,20 @@ export default function App() {
 
   const currentTool = TOOLS.find(t => t.id === activeTool);
 
+  // ── Tray drag ref (holds items being dragged from tray) ───────
+  const trayDragRef = useRef(null);
+
+  // ── Pineapple toast (shown when a batch finishes) ─────────────
+  const [showToast, setShowToast] = useState(false);
+  const wasProcessingRef = useRef(false);
+  useEffect(() => {
+    if (wasProcessingRef.current && !isProcessing) {
+      const done = results.filter(r => r.status === 'done');
+      if (done.length > 0) setShowToast(true);
+    }
+    wasProcessingRef.current = isProcessing;
+  }, [isProcessing]);
+
   // ── File management ───────────────────────────────────────────
   const addFiles = useCallback((newFiles) => {
     const items = Array.from(newFiles).map(f => ({
@@ -115,6 +130,22 @@ export default function App() {
 
   function removeTrayItem(id) { setTray(prev => prev.filter(t => t.id !== id)); }
   function clearTray() { setTray([]); }
+
+  // ── Tray drag handlers ────────────────────────────────────────
+  function handleTrayDragStart(items) {
+    trayDragRef.current = items;
+    document.body.classList.add('tray-dragging');
+  }
+  function handleTrayDragEnd() {
+    trayDragRef.current = null;
+    document.body.classList.remove('tray-dragging');
+  }
+  function handleTrayDrop() {
+    const items = trayDragRef.current;
+    trayDragRef.current = null;
+    document.body.classList.remove('tray-dragging');
+    if (items?.length) loadFromTray(items);
+  }
 
   // ── Output naming ─────────────────────────────────────────────
   function getOutputFilename(fileItem, mime, index) {
@@ -224,10 +255,16 @@ export default function App() {
         onLoadItem={(item) => loadFromTray([item])}
         onRemoveItem={removeTrayItem}
         onClear={clearTray}
+        onDragStart={handleTrayDragStart}
+        onDragEnd={handleTrayDragEnd}
+      />
+      <PineappleToast
+        show={showToast}
+        onDismiss={() => setShowToast(false)}
       />
       <main className="main">
         <div className="tool-area">
-          <Dropzone onFiles={addFiles} accept={currentTool?.accept} label={currentTool?.desc} />
+          <Dropzone onFiles={addFiles} accept={currentTool?.accept} label={currentTool?.desc} onTrayDrop={handleTrayDrop} />
           <ToolSettings
             tool={activeTool}
             settings={settings}
