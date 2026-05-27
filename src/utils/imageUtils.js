@@ -1,35 +1,63 @@
 import piexif from 'piexifjs';
 
-// Parse the EXIF orientation tag directly from JPEG bytes (values 1–8).
-// Returns 1 (no rotation) for non-JPEG or any parse failure.
+// Scan a TIFF-structured block for tag 0x0112 (Orientation) and return its value.
+function parseTiffOrientation(view, tiffStart, le) {
+  try {
+    const ifdOffset = view.getUint32(tiffStart + 4, le);
+    const ifd       = tiffStart + ifdOffset;
+    if (ifd + 2 > view.byteLength) return 1;
+    const entries = view.getUint16(ifd, le);
+    for (let i = 0; i < entries; i++) {
+      const e = ifd + 2 + i * 12;
+      if (e + 12 > view.byteLength) break;
+      if (view.getUint16(e, le) === 0x0112) return view.getUint16(e + 8, le);
+    }
+  } catch {}
+  return 1;
+}
+
+// Parse the EXIF Orientation tag from JPEG (APP1) or PNG (eXIf chunk).
+// Returns 1 (no rotation) for unrecognised formats or any parse failure.
 async function readExifOrientation(file) {
-  if (!file.type.includes('jpeg') && !/\.jpe?g$/i.test(file.name || '')) return 1;
   try {
     const buf  = await file.slice(0, 65536).arrayBuffer();
     const view = new DataView(buf);
-    if (view.getUint16(0) !== 0xFFD8) return 1;
-    let off = 2;
-    while (off + 4 <= view.byteLength) {
-      const marker = view.getUint16(off);
-      const segLen = view.getUint16(off + 2);
-      if (marker === 0xFFE1 && view.byteLength >= off + 10 &&
-          view.getUint32(off + 4) === 0x45786966 &&   // "Exif"
-          view.getUint16(off + 8) === 0x0000) {        // null pad
-        const tiff = off + 10;
-        const le   = view.getUint16(tiff) === 0x4949; // little-endian?
-        const ifd  = tiff + view.getUint32(tiff + 4, le);
-        if (ifd + 2 > view.byteLength) break;
-        const entries = view.getUint16(ifd, le);
-        for (let i = 0; i < entries; i++) {
-          const e = ifd + 2 + i * 12;
-          if (e + 12 > view.byteLength) break;
-          if (view.getUint16(e, le) === 0x0112) {      // Orientation tag
-            return view.getUint16(e + 8, le);
-          }
+
+    // ── JPEG: scan APP markers ──────────────────────────────────
+    if (view.getUint16(0) === 0xFFD8) {
+      let off = 2;
+      while (off + 4 <= view.byteLength) {
+        const marker = view.getUint16(off);
+        const segLen = view.getUint16(off + 2);
+        if (marker === 0xFFE1 &&
+            view.byteLength >= off + 10 &&
+            view.getUint32(off + 4) === 0x45786966 && // "Exif"
+            view.getUint16(off + 8) === 0x0000) {      // null pad
+          const tiff = off + 10;
+          const le   = view.getUint16(tiff) === 0x4949;
+          return parseTiffOrientation(view, tiff, le);
         }
+        if (marker === 0xFFDA) break; // SOS — no more metadata ahead
+        off += 2 + segLen;
       }
-      if (marker === 0xFFDA) break; // SOS — no more metadata
-      off += 2 + segLen;
+      return 1;
+    }
+
+    // ── PNG: scan chunks for eXIf ───────────────────────────────
+    if (view.getUint32(0) === 0x89504E47 && view.getUint32(4) === 0x0D0A1A0A) {
+      let off = 8;
+      while (off + 12 <= view.byteLength) {
+        const chunkLen  = view.getUint32(off);
+        const chunkType = view.getUint32(off + 4);
+        if (chunkType === 0x65584966) { // 'eXIf'
+          const tiff = off + 8;
+          const le   = view.getUint16(tiff) === 0x4949;
+          return parseTiffOrientation(view, tiff, le);
+        }
+        if (chunkType === 0x49454E44) break; // 'IEND'
+        off += 12 + chunkLen;
+      }
+      return 1;
     }
   } catch {}
   return 1;
