@@ -1,9 +1,37 @@
+import { useState, useEffect } from 'react';
 import { formatBytes } from '../utils/imageUtils';
 
 function fileIcon(name = '') {
-  const ext = name.split('.').pop().toLowerCase();
+  const ext = (name.split('.').pop() || '').toLowerCase();
   if (['heic', 'heif'].includes(ext)) return '📷';
   return '🖼️';
+}
+
+// Real thumbnail; falls back to emoji for HEIC or on load error
+function Thumb({ fileItem, result }) {
+  const [url, setUrl] = useState(null);
+  const isHeic = /\.(heic|heif)$/i.test(fileItem?.name || '');
+  const source = result?.status === 'done' ? result.blob : fileItem?.file;
+
+  useEffect(() => {
+    if (!source || isHeic) { setUrl(null); return; }
+    const u = URL.createObjectURL(source);
+    setUrl(u);
+    return () => URL.revokeObjectURL(u);
+  }, [source, isHeic]);
+
+  if (url) {
+    return (
+      <img
+        src={url}
+        alt=""
+        className="file-thumb-img"
+        draggable={false}
+        onError={() => setUrl(null)}
+      />
+    );
+  }
+  return <span style={{ fontSize: 16 }}>{fileIcon(fileItem.name)}</span>;
 }
 
 function StatusBadge({ status }) {
@@ -78,7 +106,9 @@ export default function FileQueue({
         return (
           <div key={fileItem.id} className={`file-card${result ? ` status-${status}` : ''}`}>
             <div className="file-card-top">
-              <div className="file-icon">{fileIcon(fileItem.name)}</div>
+              <div className="file-icon">
+                <Thumb fileItem={fileItem} result={result} />
+              </div>
               <div className="file-info">
                 <div className="file-name" title={result?.outputName || fileItem.name}>
                   {result?.outputName || fileItem.name}

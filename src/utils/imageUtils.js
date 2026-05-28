@@ -418,34 +418,43 @@ export async function cropImage(file, { ratio, cropRect }) {
 }
 
 // ─── Rotate / Flip ─────────────────────────────────────────────
-export async function rotateFlip(file, { action }) {
-  const img = await loadImage(file);
-  const sw = img.naturalWidth;
-  const sh = img.naturalHeight;
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
+// deg: cumulative rotation in degrees (0 / 90 / 180 / 270)
+// flipH / flipV: boolean toggles applied after rotation
+export async function rotateFlip(file, { deg = 0, flipH = false, flipV = false }) {
+  const img  = await loadImage(file);
+  const sw   = img.naturalWidth;
+  const sh   = img.naturalHeight;
+  const norm = ((Math.round(deg) % 360) + 360) % 360;
+  const swap = norm === 90 || norm === 270;
 
-  if (action === 'cw90') {
-    canvas.width = sh; canvas.height = sw;
-    ctx.translate(sh, 0); ctx.rotate(Math.PI / 2);
-  } else if (action === 'ccw90') {
-    canvas.width = sh; canvas.height = sw;
-    ctx.translate(0, sw); ctx.rotate(-Math.PI / 2);
-  } else if (action === '180') {
-    canvas.width = sw; canvas.height = sh;
-    ctx.translate(sw, sh); ctx.rotate(Math.PI);
-  } else if (action === 'flipH') {
-    canvas.width = sw; canvas.height = sh;
-    ctx.translate(sw, 0); ctx.scale(-1, 1);
-  } else if (action === 'flipV') {
-    canvas.width = sw; canvas.height = sh;
-    ctx.translate(0, sh); ctx.scale(1, -1);
+  // Step 1 — rotation
+  const rCanvas = document.createElement('canvas');
+  const rCtx    = rCanvas.getContext('2d');
+  rCanvas.width  = swap ? sh : sw;
+  rCanvas.height = swap ? sw : sh;
+  if (norm === 90)  { rCtx.translate(sh, 0);  rCtx.rotate(Math.PI / 2); }
+  if (norm === 180) { rCtx.translate(sw, sh);  rCtx.rotate(Math.PI); }
+  if (norm === 270) { rCtx.translate(0, sw);   rCtx.rotate(-Math.PI / 2); }
+  rCtx.drawImage(img, 0, 0);
+
+  const mime = file.type || 'image/jpeg';
+
+  if (!flipH && !flipV) {
+    return { blob: await canvasToBlob(rCanvas, mime, 0.92), mime };
   }
 
-  ctx.drawImage(img, 0, 0);
-  const mime = file.type || 'image/jpeg';
-  const blob = await canvasToBlob(canvas, mime, 0.92);
-  return { blob, mime };
+  // Step 2 — flip
+  const rw = rCanvas.width, rh = rCanvas.height;
+  const canvas = document.createElement('canvas');
+  canvas.width = rw; canvas.height = rh;
+  const ctx = canvas.getContext('2d');
+  ctx.save();
+  ctx.translate(flipH ? rw : 0, flipV ? rh : 0);
+  ctx.scale(flipH ? -1 : 1, flipV ? -1 : 1);
+  ctx.drawImage(rCanvas, 0, 0);
+  ctx.restore();
+
+  return { blob: await canvasToBlob(canvas, mime, 0.92), mime };
 }
 
 // ─── Brightness / Contrast ─────────────────────────────────────

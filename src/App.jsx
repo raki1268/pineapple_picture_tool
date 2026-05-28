@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import Header from './components/Header';
+import Footer from './components/Footer';
 import ToolNav from './components/ToolNav';
 import StagingTray from './components/StagingTray';
 import PineappleToast from './components/PineappleToast';
@@ -58,7 +59,9 @@ export default function App() {
     resizeLockAspect: true,
     cropRatio: '1:1',
     cropRect: null,
-    rotateAction: 'cw90',
+    rotateDeg: 0,
+    rotateFlipH: false,
+    rotateFlipV: false,
     brightness: 0,
     contrast: 0,
     renamePattern: '{original}_{n}',
@@ -190,7 +193,7 @@ export default function App() {
         ratio: settings.cropRatio,
         cropRect: files.length === 1 ? settings.cropRect : null,
       });
-      case 'rotate':     return rotateFlip(file, { action: settings.rotateAction });
+      case 'rotate':     return rotateFlip(file, { deg: settings.rotateDeg, flipH: settings.rotateFlipH, flipV: settings.rotateFlipV });
       case 'brightness': return adjustBrightnessContrast(file, {
         brightness: settings.brightness,
         contrast: settings.contrast,
@@ -294,6 +297,7 @@ export default function App() {
           isProcessing={isProcessing}
         />
       </main>
+      <Footer />
     </div>
   );
 }

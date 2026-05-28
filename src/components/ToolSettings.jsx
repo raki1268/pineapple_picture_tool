@@ -34,9 +34,12 @@ function Toggle({ checked, onChange, label }) {
   );
 }
 
-function ActionBtn({ selected, onClick, children }) {
+function ActionBtn({ selected, featured, onClick, children }) {
   return (
-    <button className={`action-btn${selected ? ' selected' : ''}`} onClick={onClick}>{children}</button>
+    <button
+      className={`action-btn${selected ? ' selected' : ''}${featured ? ' featured' : ''}`}
+      onClick={onClick}
+    >{children}</button>
   );
 }
 
@@ -58,33 +61,46 @@ function Slider({ label, value, min, max, onChange }) {
   );
 }
 
-const ROTATE_CSS = {
-  cw90:  'rotate(90deg)',
-  ccw90: 'rotate(-90deg)',
-  '180': 'rotate(180deg)',
-  flipH: 'scaleX(-1)',
-  flipV: 'scaleY(-1)',
-};
-
 function RotateSettings({ s, set, files }) {
   const previewFile = files.length === 1 ? files[0]?.file ?? null : null;
   const previewUrl  = useObjectURL(previewFile);
-  const transform   = ROTATE_CSS[s.rotateAction] || '';
+
+  // CSS preview: rotate then flip (matches canvas step order)
+  const transform = [
+    s.rotateDeg  ? `rotate(${s.rotateDeg}deg)` : '',
+    s.rotateFlipH ? 'scaleX(-1)' : '',
+    s.rotateFlipV ? 'scaleY(-1)' : '',
+  ].filter(Boolean).join(' ') || 'none';
+
+  const stateLabel = [
+    s.rotateDeg  ? `${s.rotateDeg}°` : '',
+    s.rotateFlipH ? 'Flip H' : '',
+    s.rotateFlipV ? 'Flip V' : '',
+  ].filter(Boolean).join(' + ') || 'No transform';
+
+  const hasTransform = s.rotateDeg !== 0 || s.rotateFlipH || s.rotateFlipV;
 
   return (
     <div className="settings-card">
       <p className="settings-title">Rotate / Flip</p>
       <div className="action-buttons">
-        {[
-          ['cw90',  '↻ 90° CW'],
-          ['ccw90', '↺ 90° CCW'],
-          ['180',   '↕ 180°'],
-          ['flipH', '⟺ Flip H'],
-          ['flipV', '↕ Flip V'],
-        ].map(([v, l]) => (
-          <ActionBtn key={v} selected={s.rotateAction === v} onClick={() => set({ rotateAction: v })}>{l}</ActionBtn>
-        ))}
+        {/* featured = yellow border highlight for most-used */}
+        <ActionBtn featured onClick={() => set({ rotateDeg: (s.rotateDeg + 90) % 360 })}>↻ 90° CW</ActionBtn>
+        <ActionBtn onClick={() => set({ rotateDeg: (s.rotateDeg + 270) % 360 })}>↺ 90° CCW</ActionBtn>
+        <ActionBtn onClick={() => set({ rotateDeg: (s.rotateDeg + 180) % 360 })}>↕ 180°</ActionBtn>
+        <ActionBtn featured selected={s.rotateFlipH} onClick={() => set({ rotateFlipH: !s.rotateFlipH })}>⟺ Flip H</ActionBtn>
+        <ActionBtn selected={s.rotateFlipV} onClick={() => set({ rotateFlipV: !s.rotateFlipV })}>↕ Flip V</ActionBtn>
       </div>
+
+      <div className="rotate-state">
+        <span className="rotate-state-label">{stateLabel}</span>
+        {hasTransform && (
+          <button className="rotate-reset-btn" onClick={() => set({ rotateDeg: 0, rotateFlipH: false, rotateFlipV: false })}>
+            Reset
+          </button>
+        )}
+      </div>
+
       {previewUrl && (
         <div style={{ marginTop: 14 }}>
           <div className="field-label" style={{ marginBottom: 6 }}><span>Preview</span></div>

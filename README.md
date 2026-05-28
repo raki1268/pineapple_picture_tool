@@ -74,6 +74,14 @@ Pineapple color palette — golden yellow `#F5C518`, forest green `#3A6B4A`, war
 
 ---
 
+## License
+
+Copyright © 2026 Raki · [rakiartoffice@gmail.com](mailto:rakiartoffice@gmail.com)
+
+**Personal & non-commercial use only.** You may use, copy, and modify this project for personal or educational purposes. Commercial use of any kind — including selling, sublicensing, or building a paid service on top of this code — is prohibited without explicit written permission from the copyright holder. See [LICENSE](./LICENSE) for full terms.
+
+---
+
 ## Non-goals (v1)
 
 Background removal · filters / presets · watermarking · collage / merging · any server-side processing
